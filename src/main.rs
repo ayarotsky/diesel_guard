@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use std::process::exit;
 
 #[derive(Parser)]
-#[command(name = "diesel-guard")]
+#[command(name = "diesel_guard")]
 #[command(version, about = "Catch unsafe PostgreSQL migrations in Diesel before they take down production", long_about = None)]
 struct Cli {
     #[command(subcommand)]

@@ -27,25 +27,25 @@ cargo install --path .
 ### Check a single migration
 
 ```bash
-diesel-guard check migrations/2024_01_01_create_users/up.sql
+diesel_guard check migrations/2024_01_01_create_users/up.sql
 ```
 
 ### Check all migrations
 
 ```bash
-diesel-guard check migrations/
+diesel_guard check migrations/
 ```
 
 ### JSON output for CI/CD
 
 ```bash
-diesel-guard check migrations/ --format json
+diesel_guard check migrations/ --format json
 ```
 
 ### Allow unsafe operations
 
 ```bash
-diesel-guard check migrations/ --allow-unsafe
+diesel_guard check migrations/ --allow-unsafe
 ```
 
 ## Phase 1 Complete ✅
