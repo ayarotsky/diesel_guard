@@ -35,7 +35,7 @@ impl OutputFormatter {
                 output.push_str(&format!("  {}\n", line));
             }
 
-            output.push_str("\n");
+            output.push('\n');
         }
 
         output
