@@ -240,7 +240,9 @@ diesel-guard init --force
 ### Configuration options
 
 ```toml
-# Skip migrations before this timestamp (format: YYYY_MM_DD_HHMMSS)
+# Skip migrations before this timestamp
+# Accepts: YYYYMMDDHHMMSS, YYYY_MM_DD_HHMMSS, or YYYY-MM-DD-HHMMSS
+# Works with any migration directory format
 start_after = "2024_01_01_000000"
 
 # Also check down.sql files (default: false)
