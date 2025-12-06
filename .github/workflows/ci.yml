@@ -54,7 +54,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Check dependencies
-        run: cargo deny check || true
+        run: cargo deny check
 
       - name: Build
         run: cargo auditable build --release
@@ -63,7 +63,7 @@ jobs:
         run: cargo test --all-features
 
       - name: Audit dependencies
-        run: cargo audit || true
+        run: cargo audit
 
   commitlint:
     name: Commitlint
