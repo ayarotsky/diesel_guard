@@ -332,3 +332,56 @@ fn test_multiple_migrations_with_start_after() {
     assert!(results.iter().any(|(p, _)| p.contains("2024_06_01")));
     assert!(results.iter().any(|(p, _)| p.contains("2024_12_01")));
 }
+
+#[test]
+fn test_migrations_checked_in_alphanumeric_order() {
+    // Verify that migrations are checked in sorted order
+    let temp_dir = TempDir::new().unwrap();
+
+    // Create migrations with different naming patterns
+    // These might be returned in random order by the filesystem
+    let migration_names = [
+        "2024_03_15_120000_create_posts",
+        "2024_01_10_080000_create_users",
+        "2024_12_01_150000_add_comments",
+        "2024_06_20_093000_update_schema",
+        "2024_02_05_140000_add_indexes",
+    ];
+
+    for name in &migration_names {
+        let migration_dir = temp_dir.path().join(name);
+        fs::create_dir(&migration_dir).unwrap();
+        fs::write(
+            migration_dir.join("up.sql"),
+            "ALTER TABLE users DROP COLUMN test;",
+        )
+        .unwrap();
+    }
+
+    let checker = SafetyChecker::new();
+    let results = checker
+        .check_directory(Utf8Path::from_path(temp_dir.path()).unwrap())
+        .unwrap();
+
+    // Should check all 5 migrations
+    assert_eq!(results.len(), 5);
+
+    // Verify results are in alphanumeric order
+    let expected_order = [
+        "2024_01_10_080000_create_users",
+        "2024_02_05_140000_add_indexes",
+        "2024_03_15_120000_create_posts",
+        "2024_06_20_093000_update_schema",
+        "2024_12_01_150000_add_comments",
+    ];
+
+    for (i, expected) in expected_order.iter().enumerate() {
+        assert!(
+            results[i].0.contains(expected),
+            "Expected migration {} at position {}, but got {}",
+            expected,
+            i,
+            results[i].0
+        );
+    }
+}

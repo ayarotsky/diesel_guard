@@ -91,8 +91,15 @@ impl SqlParser {
                         return false;
                     }
 
-                    // Check if line starts with the statement keyword
-                    trimmed.to_uppercase().starts_with(first_keyword)
+                    // Check if first word matches the statement keyword
+                    // Avoids matching keywords within identifiers (e.g., "CREATE" in "CREATED_AT")
+                    let first_word = trimmed
+                        .split_whitespace()
+                        .next()
+                        .unwrap_or("")
+                        .to_uppercase();
+
+                    !first_keyword.is_empty() && first_word == *first_keyword
                 })
                 .map(|(idx, _)| idx + 1); // 1-indexed
 
@@ -272,5 +279,36 @@ ALTER TABLE users DROP COLUMN email;
 
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0], 5); // Real ALTER on line 5, not the commented one
+    }
+
+    #[test]
+    fn test_extract_statement_lines_avoids_keyword_in_identifier() {
+        // Regression test: "CREATED_AT" should not match "CREATE"
+        let parser = SqlParser::new();
+        let sql = r#"
+CREATE TABLE test (
+  created_at TIMESTAMP
+);
+CREATE INDEX idx ON test(id);
+        "#;
+
+        let statements = parser.parse(sql).unwrap();
+        let lines = SqlParser::extract_statement_lines(sql, &statements);
+
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[0], 2); // CREATE TABLE on line 2
+        assert_eq!(lines[1], 5); // CREATE INDEX on line 5, not line 3 (created_at)
+    }
+
+    #[test]
+    fn test_extract_statement_lines_simple_alter() {
+        let parser = SqlParser::new();
+        let sql = "ALTER TABLE users DROP COLUMN test;";
+
+        let statements = parser.parse(sql).unwrap();
+        let lines = SqlParser::extract_statement_lines(sql, &statements);
+
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0], 1);
     }
 }

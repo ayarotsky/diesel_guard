@@ -54,12 +54,21 @@ impl SafetyChecker {
 
     /// Check all migration files in a directory
     pub fn check_directory(&self, dir: &Utf8Path) -> Result<Vec<(String, Vec<Violation>)>> {
-        // Collect all files to check
-        let files_to_check: Vec<_> = WalkDir::new(dir)
+        // Collect and sort all directory entries alphanumerically
+        // This ensures migrations are checked in chronological order
+        let mut entries: Vec<_> = WalkDir::new(dir)
             .max_depth(1)
             .min_depth(1)
             .into_iter()
             .filter_map(|entry| entry.ok())
+            .collect();
+
+        // Sort entries by path name to ensure deterministic order
+        entries.sort_by(|a, b| a.path().cmp(b.path()));
+
+        // Collect all files to check
+        let files_to_check: Vec<_> = entries
+            .into_iter()
             .flat_map(|entry| {
                 let path = entry.path();
                 let path_utf8 = Utf8Path::from_path(path).expect("Path contains invalid UTF-8");
