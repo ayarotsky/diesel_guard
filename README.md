@@ -1,5 +1,7 @@
 # Diesel Guard
 
+![Build Status](https://github.com/ayarotsky/diesel-guard/actions/workflows/ci.yml/badge.svg?branch=main)
+
 Catch unsafe PostgreSQL migrations in Diesel before they take down production.
 
 ✓ Detects operations that lock tables or cause downtime<br>
