@@ -114,6 +114,17 @@ fn test_alter_column_type_with_using_detected() {
 }
 
 #[test]
+fn test_create_extension_detected() {
+    let checker = SafetyChecker::new();
+    let path = fixture_path("create_extension_unsafe");
+
+    let violations = checker.check_file(Utf8Path::new(&path)).unwrap();
+
+    assert_eq!(violations.len(), 1, "Expected 1 violation");
+    assert_eq!(violations[0].operation, "CREATE EXTENSION");
+}
+
+#[test]
 fn test_drop_column_detected() {
     let checker = SafetyChecker::new();
     let path = fixture_path("drop_column");
@@ -162,14 +173,14 @@ fn test_check_entire_fixtures_directory() {
 
     assert_eq!(
         results.len(),
-        9,
-        "Expected violations in 9 files, got {}",
+        10,
+        "Expected violations in 10 files, got {}",
         results.len()
     );
 
     assert_eq!(
-        total_violations, 10,
-        "Expected 10 total violations (drop_multiple_columns has 2), got {}",
+        total_violations, 11,
+        "Expected 11 total violations (drop_multiple_columns has 2), got {}",
         total_violations
     );
 }
