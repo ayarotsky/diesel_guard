@@ -8,7 +8,7 @@ This document provides context for AI coding agents working on **diesel-guard**.
 
 **Core Technology:**
 - Language: Rust
-- SQL Parser: `sqlparser` (v0.59.0)
+- SQL Parser: `sqlparser` (v0.60.0)
 - Framework: Diesel ORM migrations
 - Target: PostgreSQL 9.6+
 
@@ -17,25 +17,31 @@ This document provides context for AI coding agents working on **diesel-guard**.
 ```
 src/
 ├── checks/           # Individual safety checks
-│   ├── mod.rs       # CheckRegistry that runs all checks
+│   ├── mod.rs       # Registry that runs all checks
 │   ├── test_utils.rs # Shared test macros (assert_detects_violation!, assert_allows!)
 │   ├── add_column.rs
 │   ├── add_index.rs
 │   ├── add_not_null.rs
+│   ├── add_unique_constraint.rs
 │   ├── alter_column_type.rs
-│   └── drop_column.rs
-├── parser.rs        # SQL parsing wrapper
+│   ├── create_extension.rs
+│   ├── drop_column.rs
+│   └── unnamed_constraint.rs
+├── parser/          # SQL parsing
+│   ├── mod.rs       # SQL parsing wrapper with custom detection fallbacks
+│   ├── comment_parser.rs # Safety-assured block parsing
+│   └── unique_using_index_detector.rs # Regex-based UNIQUE USING INDEX detection
 ├── safety_checker.rs # Main checker that processes files/directories
 └── violation.rs     # Violation struct with operation/problem/solution
 
 tests/
-├── fixtures/        # Test migration files (11 fixtures: 3 safe, 9 unsafe)
+├── fixtures/        # Test migration files (13 fixtures: 7 safe, 12 unsafe)
 └── fixtures_test.rs # Integration tests
 ```
 
 **Key Components:**
 - **Check trait**: All safety checks implement this trait (`fn check(&self, stmt: &Statement) -> Result<Vec<Violation>>`)
-- **CheckRegistry**: Holds all registered checks and runs them against statements
+- **Registry**: Holds all registered checks and runs them against statements
 - **SafetyChecker**: Main API for checking files/directories
 - **Violation**: Contains operation name, problem description, and safe solution
 
@@ -126,15 +132,14 @@ mod your_check;
 // 2. Add public export (alphabetically)
 pub use your_check::YourCheck;
 
-// 3. Add to registry in CheckRegistry::new()
-checks: vec![
+// 3. Add to register_enabled_checks() method (alphabetically)
+fn register_enabled_checks(&mut self, config: &Config) {
     // ... existing checks ...
-    Box::new(YourCheck),
-]
-
-// 4. Update test count in test_registry_creation()
-assert_eq!(registry.checks.len(), N); // where N = total checks
+    self.register_check(config, YourCheck);
+}
 ```
+
+**Note**: Check names are automatically extracted at runtime using `std::any::type_name`. No need to manually update a constant - the check name will be derived from the struct name (e.g., `YourCheck` becomes `"YourCheck"`).
 
 ### 4. Create Test Fixtures
 
@@ -201,7 +206,7 @@ Remove from "Coming Soon" if it was listed there.
 ### 7. Verify Everything
 
 ```bash
-cargo test           # All tests pass (currently 40 tests)
+cargo test           # All tests pass
 cargo fmt            # Code is formatted
 cargo clippy --all-targets --all-features -- -D warnings  # No warnings
 ```
@@ -319,14 +324,12 @@ Validates end-to-end behavior:
 - Directory scanning works correctly
 - Fixture counts match expectations
 
-**Current state**: 11 fixtures (3 safe, 9 unsafe) with 11 integration tests
-
 ## Common Pitfalls
 
-### 1. Forgetting CheckRegistry Updates
+### 1. Forgetting Registry Updates
 
 **Symptom**: New check doesn't run
-**Fix**: Update `CheckRegistry::new()` and `test_registry_creation()` count
+**Fix**: Add the check to `register_enabled_checks()` method in `src/checks/mod.rs`. The check name is automatically extracted, so no manual constant updates needed.
 
 ### 2. Incorrect Fixture Counts
 
@@ -353,6 +356,71 @@ Validates end-to-end behavior:
 **Symptom**: Safe CONCURRENTLY operation not tested correctly
 **Fix**: Add `metadata.toml` with `run_in_transaction = false` for CONCURRENTLY operations
 
+## Parser Implementation
+
+### Custom Detection for Unsupported Syntax
+
+**UNIQUE USING INDEX Detection** (`src/parser/unique_using_index_detector.rs`):
+
+sqlparser 0.60 with PostgreSqlDialect cannot parse PostgreSQL's `UNIQUE USING INDEX` syntax:
+```sql
+ALTER TABLE users ADD CONSTRAINT users_email_key UNIQUE USING INDEX users_email_idx;
+```
+
+To handle this limitation while recognizing this safe pattern:
+
+**Detection Strategy:**
+- When `parse_with_metadata()` encounters a parse error, it checks if the SQL contains `UNIQUE USING INDEX` syntax using regex
+- Pattern: `(?i)ALTER\s+TABLE\s+\S+\s+ADD\s+CONSTRAINT\s+\S+\s+UNIQUE\s+USING\s+INDEX\s+\S+`
+- If detected: Returns empty statements (no violations) since this is the safe way to add unique constraints
+- If not detected: Returns the original parse error
+
+**Implementation Details:**
+- Uses `std::sync::LazyLock` for regex compilation (no external dependencies)
+- Case-insensitive matching via `(?i)` flag
+- Distinguishes from regular `UNIQUE (columns)` syntax (which is unsafe)
+- Comprehensive test coverage including case sensitivity, false positives
+
+**Why This Works:**
+- `UNIQUE USING INDEX` is the recommended safe approach (promotes existing index to constraint)
+- No table lock required - index already exists with data validated
+- Returning empty statements means no violations are reported
+- Regular `ADD UNIQUE (columns)` is still caught by `AddUniqueConstraintCheck`
+
+**Important Limitation:**
+
+⚠️ **Multi-statement files**: When UNIQUE USING INDEX is detected and causes a parse error, ALL statements in the file are skipped, not just the unparseable one. This is because sqlparser fails to parse the entire file when it encounters unsupported syntax.
+
+**Impact:**
+- If a file contains both `UNIQUE USING INDEX` and other potentially unsafe operations, the other operations will NOT be checked
+- A warning is logged to stderr when this occurs to alert users
+- This limitation is inherent to sqlparser's all-or-nothing parsing approach
+
+**Mitigation:**
+- Diesel migrations typically use one statement per file, so this is rarely an issue in practice
+- Users can split multi-statement files into separate migration files if needed
+- Consider using `-- safety-assured` blocks for known-safe multi-statement migrations
+
+**Long-term Solutions:**
+- Pre-process SQL to isolate/remove UNIQUE USING INDEX statements before parsing
+- Implement partial parsing to handle individual statements separately
+- File upstream PR to add UNIQUE USING INDEX support to sqlparser
+
+**When to Add Custom Detection:**
+
+Only add custom regex-based detection for sqlparser limitations when:
+1. The syntax is PostgreSQL-specific and sqlparser doesn't support it
+2. The syntax represents a **safe pattern** that should not trigger violations
+3. Filing an upstream sqlparser PR is impractical or would take too long
+4. The pattern is well-defined and can be reliably detected with regex
+
+**How to Add Custom Detection:**
+1. Create detector module in `src/parser/` with regex pattern and tests
+2. Update `parse_with_metadata()` in `src/parser/mod.rs` to check for pattern on parse errors
+3. Return empty statements if safe pattern detected, otherwise return original error
+4. Add integration tests to verify the pattern is recognized correctly
+5. Document the limitation and workaround in AGENTS.md
+
 ## Safety-Assured Implementation
 
 Users can wrap SQL in `-- safety-assured:start` / `-- safety-assured:end` blocks to bypass checks.
@@ -372,7 +440,7 @@ Users can wrap SQL in `-- safety-assured:start` / `-- safety-assured:end` blocks
   - Ignore ranges from comment parser
 - `extract_statement_lines()` maps statements to source lines using keyword matching
 
-**CheckRegistry** (`src/checks/mod.rs`):
+**Registry** (`src/checks/mod.rs`):
 - `check_statements_with_context()` filters checks based on ignore ranges
 - `is_line_ignored()` checks if a line falls within any range
 - All checks are bypassed for statements within safety-assured blocks
@@ -433,12 +501,15 @@ Users can wrap SQL in `-- safety-assured:start` / `-- safety-assured:end` blocks
 
 ## Current Project State
 
-- **Checks implemented**: 5
+- **Checks implemented**: 8
   - ADD COLUMN with DEFAULT
   - ADD INDEX without CONCURRENTLY
   - ADD NOT NULL constraint
+  - ADD UNIQUE constraint via ALTER TABLE
   - ALTER COLUMN TYPE
+  - CREATE EXTENSION
   - DROP COLUMN
+  - Unnamed constraints (UNIQUE, FOREIGN KEY, CHECK)
 
 - **Code quality**: All passing
   - ✅ `cargo test`
@@ -450,10 +521,11 @@ Users can wrap SQL in `-- safety-assured:start` / `-- safety-assured:end` blocks
 
 ## Dependencies
 
-- **sqlparser**: v0.59.0 - SQL parsing
+- **sqlparser**: v0.60.0 - SQL parsing
 - **colored**: v3.0.0 - Terminal output formatting
 - **thiserror**: v2.0.17 - Error handling
 - **toml**: v0.9.8 - Metadata file parsing
+- **regex**: v1.10.0 - Custom pattern detection for unsupported SQL syntax
 
 ## Build & Development Commands
 

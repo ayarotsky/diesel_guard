@@ -18,6 +18,7 @@ fn test_safe_fixtures_pass() {
     let safe_fixtures = vec![
         "add_column_safe",
         "add_index_with_concurrently",
+        "add_unique_constraint_safe",
         "drop_not_null",
         "safety_assured_drop",
         "safety_assured_multiple",
@@ -126,16 +127,65 @@ fn test_create_extension_detected() {
 }
 
 #[test]
+fn test_add_unique_constraint_detected() {
+    let checker = SafetyChecker::new();
+    let path = fixture_path("add_unique_constraint_unsafe");
+
+    let violations = checker.check_file(Utf8Path::new(&path)).unwrap();
+
+    assert_eq!(violations.len(), 1, "Expected 1 violation");
+    assert_eq!(violations[0].operation, "ADD UNIQUE constraint");
+}
+
+#[test]
+fn test_unique_using_index_is_safe() {
+    let checker = SafetyChecker::new();
+    let path = fixture_path("add_unique_constraint_safe");
+
+    // Should parse successfully (even though sqlparser can't parse it)
+    let violations = checker.check_file(Utf8Path::new(&path)).unwrap();
+
+    // Should have NO violations (UNIQUE USING INDEX is the safe way)
+    assert_eq!(
+        violations.len(),
+        0,
+        "UNIQUE USING INDEX should not be flagged as unsafe"
+    );
+}
+
+#[test]
+fn test_unique_using_index_skips_other_statements() {
+    let checker = SafetyChecker::new();
+    let path = fixture_path("unique_using_index_with_unsafe");
+
+    // This file contains both UNIQUE USING INDEX (safe) and DROP COLUMN (unsafe)
+    // Due to parser limitation, ALL statements are skipped when UNIQUE USING INDEX
+    // causes a parse error, so even the unsafe DROP COLUMN is not detected
+    let violations = checker.check_file(Utf8Path::new(&path)).unwrap();
+
+    // LIMITATION: Should be 1 violation (DROP COLUMN) but is 0 because parser fails
+    // This test documents the known limitation
+    assert_eq!(
+        violations.len(),
+        0,
+        "Parser limitation: UNIQUE USING INDEX causes ALL statements to be skipped, \
+         including the unsafe DROP COLUMN in this file"
+    );
+}
+
+#[test]
 fn test_unnamed_constraint_detected() {
     let checker = SafetyChecker::new();
     let path = fixture_path("unnamed_constraint_unsafe");
 
     let violations = checker.check_file(Utf8Path::new(&path)).unwrap();
 
-    assert_eq!(violations.len(), 3, "Expected 3 violations");
-    assert_eq!(violations[0].operation, "Unnamed constraint");
+    // Note: Unnamed UNIQUE is caught by both AddUniqueConstraintCheck and UnnamedConstraintCheck
+    assert_eq!(violations.len(), 4, "Expected 4 violations");
+    assert_eq!(violations[0].operation, "ADD UNIQUE constraint");
     assert_eq!(violations[1].operation, "Unnamed constraint");
     assert_eq!(violations[2].operation, "Unnamed constraint");
+    assert_eq!(violations[3].operation, "Unnamed constraint");
 }
 
 #[test]
@@ -220,14 +270,14 @@ fn test_check_entire_fixtures_directory() {
 
     assert_eq!(
         results.len(),
-        14,
-        "Expected violations in 14 files, got {}",
+        15,
+        "Expected violations in 15 files, got {}",
         results.len()
     );
 
     assert_eq!(
-        total_violations, 17,
-        "Expected 17 total violations (12 files with 1 each, drop_multiple_columns has 2, unnamed_constraint_unsafe has 3), got {}",
+        total_violations, 19,
+        "Expected 19 total violations: 10 files with 1 each, drop_multiple_columns with 2, unnamed_constraint_unsafe with 4, add_serial_column_unsafe with 1, rename_column_unsafe with 1, rename_table_unsafe with 1, got {}",
         total_violations
     );
 }

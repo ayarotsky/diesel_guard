@@ -21,7 +21,7 @@ static MIGRATION_TIMESTAMP_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 fn valid_check_names_help() -> String {
     format!(
         "Valid check names: {}",
-        crate::checks::ALL_CHECK_NAMES.join(", ")
+        crate::checks::Registry::all_check_names().join(", ")
     )
 }
 
@@ -110,7 +110,7 @@ impl Config {
 
         // Validate check names against the central registry
         for check_name in &self.disable_checks {
-            if !crate::checks::ALL_CHECK_NAMES.contains(&check_name.as_str()) {
+            if !crate::checks::Registry::all_check_names().contains(&check_name.as_str()) {
                 return Err(ConfigError::InvalidCheckName {
                     invalid_name: check_name.clone(),
                 });
@@ -335,7 +335,7 @@ mod tests {
         let help = error.help().unwrap().to_string();
 
         // Verify help text includes all check names from the registry
-        for &check_name in crate::checks::ALL_CHECK_NAMES {
+        for &check_name in &crate::checks::Registry::all_check_names() {
             assert!(
                 help.contains(check_name),
                 "Help text should include '{}', got: {}",

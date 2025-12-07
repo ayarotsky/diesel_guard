@@ -142,6 +142,32 @@ CREATE UNIQUE INDEX CONCURRENTLY idx_users_username ON users(username);
 run_in_transaction = false
 ```
 
+### Adding a UNIQUE constraint
+
+#### Bad
+
+Adding a UNIQUE constraint via ALTER TABLE acquires an ACCESS EXCLUSIVE lock, blocking all reads and writes during index creation. This is worse than CREATE INDEX without CONCURRENTLY.
+
+```sql
+ALTER TABLE users ADD CONSTRAINT users_email_key UNIQUE (email);
+ALTER TABLE users ADD UNIQUE (email);  -- Unnamed is also bad
+```
+
+#### Good
+
+Use CREATE UNIQUE INDEX CONCURRENTLY, then optionally add the constraint:
+
+```sql
+-- Step 1: Create the unique index concurrently
+CREATE UNIQUE INDEX CONCURRENTLY users_email_idx ON users(email);
+
+-- Step 2 (Optional): Add constraint using the existing index
+-- This is instant since the index already exists
+ALTER TABLE users ADD CONSTRAINT users_email_key UNIQUE USING INDEX users_email_idx;
+```
+
+**Important:** Requires `metadata.toml` with `run_in_transaction = false` (same as CREATE INDEX CONCURRENTLY).
+
 ### Changing column type
 
 #### Bad
@@ -444,6 +470,7 @@ disable_checks = ["AddColumnCheck"]
 - `AddIndexCheck` - CREATE INDEX without CONCURRENTLY
 - `AddNotNullCheck` - ALTER COLUMN SET NOT NULL
 - `AddSerialColumnCheck` - ADD COLUMN with SERIAL
+- `AddUniqueConstraintCheck` - ADD UNIQUE constraint via ALTER TABLE
 - `AlterColumnTypeCheck` - ALTER COLUMN TYPE
 - `CreateExtensionCheck` - CREATE EXTENSION
 - `DropColumnCheck` - DROP COLUMN
@@ -505,7 +532,6 @@ Error: Unclosed 'safety-assured:start' at line 1
 ### Constraint & lock-related
 
 - **ADD FOREIGN KEY constraint** - Blocks writes during validation; use NOT VALID + separate VALIDATE
-- **ADD UNIQUE constraint** - Blocks reads/writes; use CREATE UNIQUE INDEX CONCURRENTLY instead
 - **ADD CHECK constraint** - Blocks during validation; use NOT VALID then VALIDATE separately
 - **DROP INDEX without CONCURRENTLY** - Blocks all queries; use DROP INDEX CONCURRENTLY
 - **REINDEX without CONCURRENTLY** - Blocks reads/writes; use REINDEX CONCURRENTLY (PostgreSQL 12+)

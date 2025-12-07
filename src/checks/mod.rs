@@ -2,6 +2,7 @@ mod add_column;
 mod add_index;
 mod add_not_null;
 mod add_serial_column;
+mod add_unique_constraint;
 mod alter_column_type;
 mod create_extension;
 mod drop_column;
@@ -16,6 +17,7 @@ pub use add_column::AddColumnCheck;
 pub use add_index::AddIndexCheck;
 pub use add_not_null::AddNotNullCheck;
 pub use add_serial_column::AddSerialColumnCheck;
+pub use add_unique_constraint::AddUniqueConstraintCheck;
 pub use alter_column_type::AlterColumnTypeCheck;
 pub use create_extension::CreateExtensionCheck;
 pub use drop_column::DropColumnCheck;
@@ -57,26 +59,13 @@ pub trait Check: Send + Sync {
     fn check(&self, stmt: &Statement) -> Vec<Violation>;
 }
 
-/// All available check names (single source of truth)
-pub const ALL_CHECK_NAMES: &[&str] = &[
-    "AddColumnCheck",
-    "AddIndexCheck",
-    "AddNotNullCheck",
-    "AddSerialColumnCheck",
-    "AlterColumnTypeCheck",
-    "CreateExtensionCheck",
-    "DropColumnCheck",
-    "RenameColumnCheck",
-    "RenameTableCheck",
-    "UnnamedConstraintCheck",
-];
-
 /// Registry of all available checks
-pub struct CheckRegistry {
+pub struct Registry {
     checks: Vec<Box<dyn Check>>,
+    names: Vec<&'static str>,
 }
 
-impl CheckRegistry {
+impl Registry {
     /// Create registry with all checks enabled (uses default config)
     pub fn new() -> Self {
         Self::with_config(&Config::default())
@@ -84,7 +73,10 @@ impl CheckRegistry {
 
     /// Create registry with configuration-based filtering
     pub fn with_config(config: &Config) -> Self {
-        let mut registry = Self { checks: vec![] };
+        let mut registry = Self {
+            checks: vec![],
+            names: vec![],
+        };
         registry.register_enabled_checks(config);
         registry
     }
@@ -95,6 +87,7 @@ impl CheckRegistry {
         self.register_check(config, AddIndexCheck);
         self.register_check(config, AddNotNullCheck);
         self.register_check(config, AddSerialColumnCheck);
+        self.register_check(config, AddUniqueConstraintCheck);
         self.register_check(config, AlterColumnTypeCheck);
         self.register_check(config, CreateExtensionCheck);
         self.register_check(config, DropColumnCheck);
@@ -111,6 +104,7 @@ impl CheckRegistry {
 
         if config.is_check_enabled(name) {
             self.checks.push(Box::new(check));
+            self.names.push(name);
         }
     }
 
@@ -193,9 +187,14 @@ impl CheckRegistry {
             .map(|(idx, _)| idx + 1) // 1-indexed
             .unwrap_or(1) // Fallback to line 1 (won't be in ignore range)
     }
+
+    /// Get all available check names
+    pub fn all_check_names() -> Vec<&'static str> {
+        Self::new().names
+    }
 }
 
-impl Default for CheckRegistry {
+impl Default for Registry {
     fn default() -> Self {
         Self::new()
     }
@@ -207,8 +206,8 @@ mod tests {
 
     #[test]
     fn test_registry_creation() {
-        let registry = CheckRegistry::new();
-        assert_eq!(registry.checks.len(), ALL_CHECK_NAMES.len());
+        let registry = Registry::new();
+        assert_eq!(registry.checks.len(), Registry::all_check_names().len());
     }
 
     #[test]
@@ -218,8 +217,8 @@ mod tests {
             ..Default::default()
         };
 
-        let registry = CheckRegistry::with_config(&config);
-        assert_eq!(registry.checks.len(), ALL_CHECK_NAMES.len() - 1); // One check disabled
+        let registry = Registry::with_config(&config);
+        assert_eq!(registry.checks.len(), Registry::all_check_names().len() - 1);
     }
 
     #[test]
@@ -229,18 +228,21 @@ mod tests {
             ..Default::default()
         };
 
-        let registry = CheckRegistry::with_config(&config);
-        assert_eq!(registry.checks.len(), ALL_CHECK_NAMES.len() - 2); // Two checks disabled
+        let registry = Registry::with_config(&config);
+        assert_eq!(registry.checks.len(), Registry::all_check_names().len() - 2);
     }
 
     #[test]
     fn test_registry_with_all_checks_disabled() {
         let config = Config {
-            disable_checks: ALL_CHECK_NAMES.iter().map(|s| s.to_string()).collect(),
+            disable_checks: Registry::all_check_names()
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
             ..Default::default()
         };
 
-        let registry = CheckRegistry::with_config(&config);
+        let registry = Registry::with_config(&config);
         assert_eq!(registry.checks.len(), 0); // All checks disabled
     }
 
@@ -249,7 +251,7 @@ mod tests {
         use sqlparser::dialect::PostgreSqlDialect;
         use sqlparser::parser::Parser;
 
-        let registry = CheckRegistry::new();
+        let registry = Registry::new();
         let sql = r#"
 -- safety-assured:start
 ALTER TABLE users DROP COLUMN email;
@@ -271,7 +273,7 @@ ALTER TABLE users DROP COLUMN email;
         use sqlparser::dialect::PostgreSqlDialect;
         use sqlparser::parser::Parser;
 
-        let registry = CheckRegistry::new();
+        let registry = Registry::new();
         let sql = "ALTER TABLE users DROP COLUMN email;";
 
         let statements = Parser::parse_sql(&PostgreSqlDialect {}, sql).unwrap();
