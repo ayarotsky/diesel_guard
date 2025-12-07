@@ -9,15 +9,15 @@
 
 use crate::checks::Check;
 use crate::violation::Violation;
-use sqlparser::ast::{AlterTableOperation, ColumnOption, Statement};
+use sqlparser::ast::{AlterTable, AlterTableOperation, ColumnOption, Statement};
 
 pub struct AddColumnCheck;
 
 impl Check for AddColumnCheck {
     fn check(&self, stmt: &Statement) -> Vec<Violation> {
-        let Statement::AlterTable {
+        let Statement::AlterTable(AlterTable {
             name, operations, ..
-        } = stmt
+        }) = stmt
         else {
             return vec![];
         };

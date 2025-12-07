@@ -12,7 +12,7 @@
 
 use crate::checks::Check;
 use crate::violation::Violation;
-use sqlparser::ast::Statement;
+use sqlparser::ast::{CreateExtension, Statement};
 
 pub struct CreateExtensionCheck;
 
@@ -20,11 +20,11 @@ impl Check for CreateExtensionCheck {
     fn check(&self, stmt: &Statement) -> Vec<Violation> {
         let mut violations = vec![];
 
-        if let Statement::CreateExtension {
+        if let Statement::CreateExtension(CreateExtension {
             name,
             if_not_exists,
             ..
-        } = stmt
+        }) = stmt
         {
             let extension_name = name.to_string();
             let if_not_exists_str = if *if_not_exists { "IF NOT EXISTS " } else { "" };

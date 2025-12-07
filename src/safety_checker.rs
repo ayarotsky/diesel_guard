@@ -1,4 +1,4 @@
-use crate::checks::CheckRegistry;
+use crate::checks::Registry;
 use crate::config::Config;
 use crate::error::Result;
 use crate::parser::SqlParser;
@@ -9,7 +9,7 @@ use walkdir::WalkDir;
 
 pub struct SafetyChecker {
     parser: SqlParser,
-    registry: CheckRegistry,
+    registry: Registry,
     config: Config,
 }
 
@@ -28,7 +28,7 @@ impl SafetyChecker {
     pub fn with_config(config: Config) -> Self {
         Self {
             parser: SqlParser::new(),
-            registry: CheckRegistry::with_config(&config),
+            registry: Registry::with_config(&config),
             config,
         }
     }

@@ -13,15 +13,15 @@
 
 use crate::checks::Check;
 use crate::violation::Violation;
-use sqlparser::ast::{AlterTableOperation, DataType, Statement};
+use sqlparser::ast::{AlterTable, AlterTableOperation, DataType, Statement};
 
 pub struct AddSerialColumnCheck;
 
 impl Check for AddSerialColumnCheck {
     fn check(&self, stmt: &Statement) -> Vec<Violation> {
-        let Statement::AlterTable {
+        let Statement::AlterTable(AlterTable {
             name, operations, ..
-        } = stmt
+        }) = stmt
         else {
             return vec![];
         };

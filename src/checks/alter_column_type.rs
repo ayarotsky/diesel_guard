@@ -12,15 +12,15 @@
 
 use crate::checks::Check;
 use crate::violation::Violation;
-use sqlparser::ast::{AlterColumnOperation, AlterTableOperation, Statement};
+use sqlparser::ast::{AlterColumnOperation, AlterTable, AlterTableOperation, Statement};
 
 pub struct AlterColumnTypeCheck;
 
 impl Check for AlterColumnTypeCheck {
     fn check(&self, stmt: &Statement) -> Vec<Violation> {
-        let Statement::AlterTable {
+        let Statement::AlterTable(AlterTable {
             name, operations, ..
-        } = stmt
+        }) = stmt
         else {
             return vec![];
         };

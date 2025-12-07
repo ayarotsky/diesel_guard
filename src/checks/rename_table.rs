@@ -12,15 +12,15 @@
 
 use crate::checks::Check;
 use crate::violation::Violation;
-use sqlparser::ast::{AlterTableOperation, Statement};
+use sqlparser::ast::{AlterTable, AlterTableOperation, Statement};
 
 pub struct RenameTableCheck;
 
 impl Check for RenameTableCheck {
     fn check(&self, stmt: &Statement) -> Vec<Violation> {
-        let Statement::AlterTable {
+        let Statement::AlterTable(AlterTable {
             name, operations, ..
-        } = stmt
+        }) = stmt
         else {
             return vec![];
         };

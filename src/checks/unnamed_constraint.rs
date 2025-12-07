@@ -11,15 +11,15 @@
 
 use crate::checks::Check;
 use crate::violation::Violation;
-use sqlparser::ast::{AlterTableOperation, Statement, TableConstraint};
+use sqlparser::ast::{AlterTable, AlterTableOperation, Statement, TableConstraint};
 
 pub struct UnnamedConstraintCheck;
 
 impl Check for UnnamedConstraintCheck {
     fn check(&self, stmt: &Statement) -> Vec<Violation> {
-        let Statement::AlterTable {
+        let Statement::AlterTable(AlterTable {
             name, operations, ..
-        } = stmt
+        }) = stmt
         else {
             return vec![];
         };
@@ -35,33 +35,30 @@ impl Check for UnnamedConstraintCheck {
 
                 // Check if constraint has a name
                 let (constraint_type, columns_desc) = match constraint {
-                    TableConstraint::Unique { name, columns, .. } => {
-                        if name.is_some() {
+                    TableConstraint::Unique(unique) => {
+                        if unique.name.is_some() {
                             return None;
                         }
-                        let cols = columns
+                        let cols = unique
+                            .columns
                             .iter()
-                            .map(|c| c.column.expr.to_string())
+                            .map(|ic| ic.column.expr.to_string())
                             .collect::<Vec<_>>()
                             .join(", ");
                         ("UNIQUE", cols)
                     }
-                    TableConstraint::ForeignKey {
-                        name,
-                        columns,
-                        foreign_table,
-                        referred_columns,
-                        ..
-                    } => {
-                        if name.is_some() {
+                    TableConstraint::ForeignKey(fk) => {
+                        if fk.name.is_some() {
                             return None;
                         }
-                        let cols = columns
+                        let cols = fk
+                            .columns
                             .iter()
                             .map(|c| c.to_string())
                             .collect::<Vec<_>>()
                             .join(", ");
-                        let foreign_cols = referred_columns
+                        let foreign_cols = fk
+                            .referred_columns
                             .iter()
                             .map(|c| c.to_string())
                             .collect::<Vec<_>>()
@@ -70,15 +67,15 @@ impl Check for UnnamedConstraintCheck {
                             "FOREIGN KEY",
                             format!(
                                 "({}) REFERENCES {}({})",
-                                cols, foreign_table, foreign_cols
+                                cols, fk.foreign_table, foreign_cols
                             ),
                         )
                     }
-                    TableConstraint::Check { name, expr, .. } => {
-                        if name.is_some() {
+                    TableConstraint::Check(check) => {
+                        if check.name.is_some() {
                             return None;
                         }
-                        ("CHECK", format!("({})", expr))
+                        ("CHECK", format!("({})", check.expr))
                     }
                     _ => return None, // Ignore other constraint types
                 };
