@@ -193,6 +193,37 @@ ALTER TABLE users DROP CONSTRAINT email_not_null;
 
 The VALIDATE step allows concurrent reads and writes, only blocking other schema changes. On PostgreSQL 12+, NOT NULL constraints are more efficient, but this approach still provides better control.
 
+### Creating extensions
+
+#### Bad
+
+Creating an extension in migrations often requires superuser privileges, which application database users typically don't have in production environments.
+
+```sql
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+CREATE EXTENSION uuid_ossp;
+```
+
+#### Good
+
+Install extensions outside of application migrations:
+
+```sql
+-- For local development: add to database setup scripts
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+-- For production: use infrastructure automation
+-- (Ansible, Terraform, or manual DBA installation)
+```
+
+**Best practices:**
+- Document required extensions in your project README
+- Include extension installation in database provisioning scripts
+- Use infrastructure automation (Ansible, Terraform) for production
+- Have your DBA or infrastructure team install extensions before deployment
+
+Common extensions that require this approach: `pg_trgm`, `uuid-ossp`, `hstore`, `postgis`, `pg_stat_statements`.
+
 ## Usage
 
 ### Check a single migration
@@ -252,6 +283,7 @@ disable_checks = ["AddColumnCheck"]
 - `AddIndexCheck` - CREATE INDEX without CONCURRENTLY
 - `AddNotNullCheck` - ALTER COLUMN SET NOT NULL
 - `AlterColumnTypeCheck` - ALTER COLUMN TYPE
+- `CreateExtensionCheck` - CREATE EXTENSION
 - `DropColumnCheck` - DROP COLUMN
 
 ## Safety Assured
@@ -326,7 +358,6 @@ Error: Unclosed 'safety-assured:start' at line 1
 - **Short integer primary keys** - SMALLINT/INT risk ID exhaustion; use BIGINT
 - **Wide indexes** - Indexes with 3+ columns rarely help; consider partial indexes
 - **Multiple foreign keys** - Can block all involved tables simultaneously
-- **CREATE EXTENSION** - Often requires superuser; install outside migrations
 - **Unnamed constraints** - Makes future migrations difficult; always name constraints explicitly
 
 ## Contributing
