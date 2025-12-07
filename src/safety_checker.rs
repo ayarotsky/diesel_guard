@@ -3,7 +3,7 @@ use crate::config::Config;
 use crate::error::Result;
 use crate::parser::SqlParser;
 use crate::violation::Violation;
-use camino::Utf8Path;
+use camino::{Utf8Path, Utf8PathBuf};
 use std::fs;
 use walkdir::WalkDir;
 
@@ -39,7 +39,7 @@ impl SafetyChecker {
 
         let violations = self.registry.check_statements_with_context(
             &parsed.statements,
-            &parsed.statement_lines,
+            &parsed.sql,
             &parsed.ignore_ranges,
         );
 
@@ -54,60 +54,8 @@ impl SafetyChecker {
 
     /// Check all migration files in a directory
     pub fn check_directory(&self, dir: &Utf8Path) -> Result<Vec<(String, Vec<Violation>)>> {
-        // Collect and sort all directory entries alphanumerically
-        // This ensures migrations are checked in chronological order
-        let mut entries: Vec<_> = WalkDir::new(dir)
-            .max_depth(1)
-            .min_depth(1)
-            .into_iter()
-            .filter_map(|entry| entry.ok())
-            .collect();
+        let files_to_check = self.collect_files(dir);
 
-        // Sort entries by path name to ensure deterministic order
-        entries.sort_by(|a, b| a.path().cmp(b.path()));
-
-        // Collect all files to check
-        let files_to_check: Vec<_> = entries
-            .into_iter()
-            .flat_map(|entry| {
-                let path = entry.path();
-                let path_utf8 = Utf8Path::from_path(path).expect("Path contains invalid UTF-8");
-
-                let mut files = vec![];
-
-                if entry.file_type().is_dir() {
-                    // Extract directory name for timestamp filtering
-                    let dir_name = path_utf8.file_name().unwrap_or("");
-
-                    // Skip if migration is before start_after threshold
-                    if !self.config.should_check_migration(dir_name) {
-                        return files;
-                    }
-
-                    // Check up.sql (always checked if migration passes filter)
-                    let up_sql = path_utf8.join("up.sql");
-                    if up_sql.exists() {
-                        files.push(up_sql);
-                    }
-
-                    // Check down.sql (only if check_down is enabled)
-                    if self.config.check_down {
-                        let down_sql = path_utf8.join("down.sql");
-                        if down_sql.exists() {
-                            files.push(down_sql);
-                        }
-                    }
-                } else if path_utf8.extension() == Some("sql") {
-                    // Individual SQL files (not in migration directories)
-                    // These are always checked regardless of config
-                    files.push(path_utf8.to_owned());
-                }
-
-                files
-            })
-            .collect();
-
-        // Check files in parallel using rayon
         files_to_check
             .iter()
             .map(|file_path| {
@@ -120,6 +68,68 @@ impl SafetyChecker {
             })
             .collect::<Result<Vec<_>>>()
             .map(|results| results.into_iter().flatten().collect())
+    }
+
+    /// Collect all SQL files to check from a directory
+    fn collect_files(&self, dir: &Utf8Path) -> Vec<Utf8PathBuf> {
+        // Collect and sort directory entries
+        let mut entries: Vec<_> = WalkDir::new(dir)
+            .max_depth(1)
+            .min_depth(1)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .collect();
+
+        entries.sort_by(|a, b| a.path().cmp(b.path()));
+
+        // Process each entry
+        entries
+            .into_iter()
+            .flat_map(|entry| {
+                let Some(path) = Utf8Path::from_path(entry.path()) else {
+                    return vec![];
+                };
+
+                if entry.file_type().is_dir() {
+                    self.process_migration_directory(path)
+                } else if path.extension() == Some("sql") {
+                    vec![path.to_owned()]
+                } else {
+                    vec![]
+                }
+            })
+            .collect()
+    }
+
+    /// Process a migration directory and return SQL files to check
+    fn process_migration_directory(&self, path: &Utf8Path) -> Vec<Utf8PathBuf> {
+        let dir_name = match path.file_name() {
+            Some(name) => name,
+            None => return vec![],
+        };
+
+        // Skip if migration is before start_after threshold
+        if !self.config.should_check_migration(dir_name) {
+            return vec![];
+        }
+
+        let mut files = vec![];
+
+        // Always check up.sql if it exists
+        let up_sql = path.join("up.sql");
+        if up_sql.exists() {
+            files.push(up_sql);
+        }
+
+        // Check down.sql only if enabled in config
+        if self.config.check_down {
+            let down_sql = path.join("down.sql");
+            if down_sql.exists() {
+                files.push(down_sql);
+            }
+        }
+
+        files
     }
 
     /// Check a path (file or directory)
