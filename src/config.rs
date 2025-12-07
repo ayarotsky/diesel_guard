@@ -12,8 +12,9 @@ use thiserror::Error;
 /// Regex pattern for validating timestamp format
 /// Accepts: YYYY_MM_DD_HHMMSS, YYYY-MM-DD-HHMMSS, or YYYYMMDDHHMMSS
 /// All separators must be the same (all underscores, all dashes, or none)
-static TIMESTAMP_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^(\d{4}_\d{2}_\d{2}_\d{6}|\d{4}-\d{2}-\d{2}-\d{6}|\d{14})$").unwrap()
+static MIGRATION_TIMESTAMP_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"^(\d{4}_\d{2}_\d{2}_\d{6}|\d{4}-\d{2}-\d{2}-\d{6}|\d{14})")
+        .expect("valid regex pattern")
 });
 
 /// Generate help text for invalid check names from the registry
@@ -119,9 +120,14 @@ impl Config {
         Ok(())
     }
 
-    /// Validate timestamp format: YYYY_MM_DD_HHMMSS
+    /// Validate timestamp format: YYYY_MM_DD_HHMMSS, YYYY-MM-DD-HHMMSS, or YYYYMMDDHHMMSS
     fn validate_timestamp(timestamp: &str) -> Result<(), ConfigError> {
-        if TIMESTAMP_REGEX.is_match(timestamp) {
+        let Some(captures) = MIGRATION_TIMESTAMP_REGEX.captures(timestamp) else {
+            return Err(ConfigError::InvalidTimestampFormat(timestamp.to_string()));
+        };
+
+        // Check if the matched part is the entire string
+        if captures.get(0).unwrap().as_str() == timestamp {
             Ok(())
         } else {
             Err(ConfigError::InvalidTimestampFormat(timestamp.to_string()))
@@ -133,32 +139,26 @@ impl Config {
         !self.disable_checks.iter().any(|c| c == check_name)
     }
 
-    /// Normalize timestamp by removing all non-digit characters
-    /// Converts any format (YYYY_MM_DD_HHMMSS, YYYY-MM-DD-HHMMSS, YYYYMMDDHHMMSS) to YYYYMMDDHHMMSS
-    fn normalize_timestamp(timestamp: &str) -> String {
-        timestamp.chars().filter(|c| c.is_ascii_digit()).collect()
-    }
-
     /// Check if migration should be checked based on start_after
     /// Returns true if migration timestamp is AFTER start_after (or if no filter set)
     pub fn should_check_migration(&self, migration_dir_name: &str) -> bool {
-        if let Some(ref start_after) = self.start_after {
-            // Normalize the start_after timestamp (remove separators)
-            let normalized_start_after = Self::normalize_timestamp(start_after);
+        let Some(ref start_after) = self.start_after else {
+            return true; // Check by default if no filter set
+        };
 
-            // Extract and normalize timestamp from migration directory name
-            // Migration formats can be: YYYYMMDDHHMMSS, YYYY_MM_DD_HHMMSS, YYYY-MM-DD-HHMMSS
-            // Extract first 14 digits from the directory name
-            let normalized_migration = Self::normalize_timestamp(migration_dir_name);
+        // Extract timestamp from migration directory name using regex
+        let Some(captures) = MIGRATION_TIMESTAMP_REGEX.captures(migration_dir_name) else {
+            return true; // If can't extract timestamp, default to checking it
+        };
 
-            if normalized_migration.len() >= 14 {
-                let migration_timestamp = &normalized_migration[..14];
-                // Lexicographic comparison works for normalized timestamp format
-                // Returns true only if migration_timestamp > start_after (strictly after)
-                return migration_timestamp > normalized_start_after.as_str();
-            }
-        }
-        true // Check by default if no filter or if dir name too short
+        let migration_timestamp = &captures[1];
+
+        // Normalize both timestamps by removing separators for comparison
+        let start_normalized = start_after.replace(['_', '-'], "");
+        let migration_normalized = migration_timestamp.replace(['_', '-'], "");
+
+        // String comparison works because all formats are lexicographically ordered
+        migration_normalized > start_normalized
     }
 }
 

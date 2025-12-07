@@ -42,13 +42,5 @@ miette = { version = "7.0", features = ["fancy"] }
 # Derive macros
 derive_more = { version = "2.1", features = ["display", "from", "error"] }
 
-# Diesel integration (optional features)
-diesel = { version = "2.2", optional = true }
-diesel_migrations = { version = "2.2", optional = true }
-
 [dev-dependencies]
 tempfile = "3.8"
-
-[features]
-default = []
-diesel_integration = ["diesel", "diesel_migrations"]
