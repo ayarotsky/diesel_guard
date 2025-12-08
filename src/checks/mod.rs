@@ -8,6 +8,7 @@ mod create_extension;
 mod drop_column;
 mod rename_column;
 mod rename_table;
+mod short_int_primary_key;
 mod unnamed_constraint;
 
 #[cfg(test)]
@@ -23,6 +24,7 @@ pub use create_extension::CreateExtensionCheck;
 pub use drop_column::DropColumnCheck;
 pub use rename_column::RenameColumnCheck;
 pub use rename_table::RenameTableCheck;
+pub use short_int_primary_key::ShortIntegerPrimaryKeyCheck;
 pub use unnamed_constraint::UnnamedConstraintCheck;
 
 use crate::config::Config;
@@ -93,6 +95,7 @@ impl Registry {
         self.register_check(config, DropColumnCheck);
         self.register_check(config, RenameColumnCheck);
         self.register_check(config, RenameTableCheck);
+        self.register_check(config, ShortIntegerPrimaryKeyCheck);
         self.register_check(config, UnnamedConstraintCheck);
     }
 

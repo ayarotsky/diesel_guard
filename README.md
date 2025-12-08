@@ -2,10 +2,10 @@
 
 ![Build Status](https://github.com/ayarotsky/diesel-guard/actions/workflows/ci.yml/badge.svg?branch=main)
 
-Catch unsafe PostgreSQL migrations in Diesel before they take down production.
+Catch dangerous PostgreSQL migrations in Diesel before they take down production.
 
 ✓ Detects operations that lock tables or cause downtime<br>
-✓ Provides safe alternatives for each unsafe operation<br>
+✓ Provides safe alternatives for each blocking operation<br>
 ✓ Works with any Diesel project - zero configuration required<br>
 ✓ Supports safety-assured blocks for verified operations<br>
 
@@ -52,12 +52,14 @@ Safe alternative:
 - [Adding a column with a default value](#adding-a-column-with-a-default-value)
 - [Dropping a column](#dropping-a-column)
 - [Adding an index non-concurrently](#adding-an-index-non-concurrently)
+- [Adding a UNIQUE constraint](#adding-a-unique-constraint)
 - [Changing column type](#changing-column-type)
 - [Adding a NOT NULL constraint](#adding-a-not-null-constraint)
 - [Creating extensions](#creating-extensions)
 - [Unnamed constraints](#unnamed-constraints)
 - [Renaming a column](#renaming-a-column)
 - [Renaming a table](#renaming-a-table)
+- [Short integer primary keys](#short-integer-primary-keys)
 - [Adding a SERIAL column to an existing table](#adding-a-serial-column-to-an-existing-table)
 
 ### Adding a column with a default value
@@ -374,6 +376,53 @@ DROP TABLE users;
 
 **Important:** This multi-step approach avoids the ACCESS EXCLUSIVE lock issues on large tables and ensures zero downtime. The migration requires multiple deployments coordinated with application code changes.
 
+### Short integer primary keys
+
+#### Bad
+
+Using SMALLINT or INT for primary keys risks ID exhaustion. SMALLINT maxes out at ~32,767 records, and INT at ~2.1 billion. While 2.1 billion seems large, active applications can exhaust this faster than expected, especially with high-frequency inserts, soft deletes, or partitioned data.
+
+Changing the type later requires an ALTER COLUMN TYPE operation with a full table rewrite and ACCESS EXCLUSIVE lock.
+
+```sql
+-- SMALLINT exhausts at ~32K records
+CREATE TABLE users (id SMALLINT PRIMARY KEY);
+
+-- INT exhausts at ~2.1B records
+CREATE TABLE posts (id INT PRIMARY KEY);
+CREATE TABLE events (id INTEGER PRIMARY KEY);
+
+-- Composite PKs with short integers still risky
+CREATE TABLE tenant_events (
+    tenant_id BIGINT,
+    event_id INT,  -- Will exhaust per tenant
+    PRIMARY KEY (tenant_id, event_id)
+);
+```
+
+#### Good
+
+Use BIGINT for all primary keys to avoid exhaustion:
+
+```sql
+-- BIGINT: effectively unlimited (~9.2 quintillion)
+CREATE TABLE users (id BIGINT PRIMARY KEY);
+
+-- BIGSERIAL: auto-incrementing BIGINT
+CREATE TABLE posts (id BIGSERIAL PRIMARY KEY);
+
+-- Composite PKs with all BIGINT
+CREATE TABLE tenant_events (
+    tenant_id BIGINT,
+    event_id BIGINT,
+    PRIMARY KEY (tenant_id, event_id)
+);
+```
+
+**Storage overhead:** BIGINT uses 8 bytes vs INT's 4 bytes - only 4 extra bytes per row. For a 1 million row table, this is ~4MB of additional storage, which is negligible compared to the operational cost of changing column types later.
+
+**Safe exceptions:** Small, finite lookup tables with <100 entries (e.g., status codes, country lists) can safely use smaller types. Use `safety-assured` to bypass the check for these cases.
+
 ### Adding a SERIAL column to an existing table
 
 #### Bad
@@ -476,6 +525,7 @@ disable_checks = ["AddColumnCheck"]
 - `DropColumnCheck` - DROP COLUMN
 - `RenameColumnCheck` - RENAME COLUMN
 - `RenameTableCheck` - RENAME TABLE
+- `ShortIntegerPrimaryKeyCheck` - SMALLINT/INT/INTEGER primary keys
 - `UnnamedConstraintCheck` - Unnamed constraints (UNIQUE, FOREIGN KEY, CHECK)
 
 ## Safety Assured
