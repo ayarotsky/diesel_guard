@@ -22,6 +22,7 @@ fn test_safe_fixtures_pass() {
         "drop_not_null",
         "safety_assured_drop",
         "safety_assured_multiple",
+        "short_int_pk_safe",
         "unnamed_constraint_safe",
     ];
 
@@ -260,6 +261,19 @@ fn test_add_serial_column_detected() {
 }
 
 #[test]
+fn test_short_int_pk_unsafe_detected() {
+    let checker = SafetyChecker::new();
+    let path = fixture_path("short_int_pk_unsafe");
+
+    let violations = checker.check_file(Utf8Path::new(&path)).unwrap();
+
+    assert_eq!(violations.len(), 4, "Expected 4 violations");
+    assert!(violations
+        .iter()
+        .all(|v| v.operation == "Short integer primary key"));
+}
+
+#[test]
 fn test_check_entire_fixtures_directory() {
     let checker = SafetyChecker::new();
     let results = checker
@@ -270,14 +284,14 @@ fn test_check_entire_fixtures_directory() {
 
     assert_eq!(
         results.len(),
-        15,
-        "Expected violations in 15 files, got {}",
+        16,
+        "Expected violations in 16 files, got {}",
         results.len()
     );
 
     assert_eq!(
-        total_violations, 19,
-        "Expected 19 total violations: 10 files with 1 each, drop_multiple_columns with 2, unnamed_constraint_unsafe with 4, add_serial_column_unsafe with 1, rename_column_unsafe with 1, rename_table_unsafe with 1, got {}",
+        total_violations, 23,
+        "Expected 23 total violations: 11 files with 1 each, drop_multiple_columns with 2, unnamed_constraint_unsafe with 4, short_int_pk_unsafe with 4, add_serial_column_unsafe with 1, rename_column_unsafe with 1, rename_table_unsafe with 1, got {}",
         total_violations
     );
 }
