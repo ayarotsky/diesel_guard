@@ -299,6 +299,43 @@ ALTER TABLE users DROP COLUMN email;
 
 **Important:** The RENAME COLUMN operation itself is fast (brief ACCESS EXCLUSIVE lock), but the primary risk is application compatibility, not lock duration. All running instances must be updated to reference the new column name before the rename is applied.
 
+### Adding a SERIAL column to an existing table
+
+#### Bad
+
+Adding a SERIAL column to an existing table triggers a full table rewrite because PostgreSQL must populate sequence values for all existing rows. This acquires an ACCESS EXCLUSIVE lock and blocks all operations.
+
+```sql
+ALTER TABLE users ADD COLUMN id SERIAL;
+ALTER TABLE users ADD COLUMN order_number BIGSERIAL;
+```
+
+#### Good
+
+Create the sequence separately, add the column without a default, then backfill:
+
+```sql
+-- Step 1: Create a sequence
+CREATE SEQUENCE users_id_seq;
+
+-- Step 2: Add the column WITHOUT default (fast, no rewrite)
+ALTER TABLE users ADD COLUMN id INTEGER;
+
+-- Outside migration: Backfill existing rows in batches
+UPDATE users SET id = nextval('users_id_seq') WHERE id IS NULL;
+
+-- Step 3: Set default for future inserts only
+ALTER TABLE users ALTER COLUMN id SET DEFAULT nextval('users_id_seq');
+
+-- Step 4: Set NOT NULL if needed (PostgreSQL 11+: safe if all values present)
+ALTER TABLE users ALTER COLUMN id SET NOT NULL;
+
+-- Step 5: Set sequence ownership
+ALTER SEQUENCE users_id_seq OWNED BY users.id;
+```
+
+**Key insight:** Adding a column with `DEFAULT nextval(...)` on an existing table still triggers a table rewrite. The solution is to add the column first without any default, backfill separately, then set the default for future rows only.
+
 ## Usage
 
 ### Check a single migration
@@ -357,6 +394,7 @@ disable_checks = ["AddColumnCheck"]
 - `AddColumnCheck` - ADD COLUMN with DEFAULT
 - `AddIndexCheck` - CREATE INDEX without CONCURRENTLY
 - `AddNotNullCheck` - ALTER COLUMN SET NOT NULL
+- `AddSerialColumnCheck` - ADD COLUMN with SERIAL
 - `AlterColumnTypeCheck` - ALTER COLUMN TYPE
 - `CreateExtensionCheck` - CREATE EXTENSION
 - `DropColumnCheck` - DROP COLUMN
@@ -430,7 +468,6 @@ Error: Unclosed 'safety-assured:start' at line 1
 
 ### Data safety & best practices
 
-- **Auto-increment on existing table** - SERIAL columns trigger full table rewrite
 - **Short integer primary keys** - SMALLINT/INT risk ID exhaustion; use BIGINT
 - **Wide indexes** - Indexes with 3+ columns rarely help; consider partial indexes
 - **Multiple foreign keys** - Can block all involved tables simultaneously

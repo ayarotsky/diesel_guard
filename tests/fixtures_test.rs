@@ -188,6 +188,17 @@ fn test_rename_column_detected() {
 }
 
 #[test]
+fn test_add_serial_column_detected() {
+    let checker = SafetyChecker::new();
+    let path = fixture_path("add_serial_column_unsafe");
+
+    let violations = checker.check_file(Utf8Path::new(&path)).unwrap();
+
+    assert_eq!(violations.len(), 1, "Expected 1 violation");
+    assert_eq!(violations[0].operation, "ADD COLUMN with SERIAL");
+}
+
+#[test]
 fn test_check_entire_fixtures_directory() {
     let checker = SafetyChecker::new();
     let results = checker
@@ -198,14 +209,14 @@ fn test_check_entire_fixtures_directory() {
 
     assert_eq!(
         results.len(),
-        12,
-        "Expected violations in 12 files, got {}",
+        13,
+        "Expected violations in 13 files, got {}",
         results.len()
     );
 
     assert_eq!(
-        total_violations, 15,
-        "Expected 15 total violations (drop_multiple_columns has 2, unnamed_constraint_unsafe has 3), got {}",
+        total_violations, 16,
+        "Expected 16 total violations (drop_multiple_columns has 2, unnamed_constraint_unsafe has 3), got {}",
         total_violations
     );
 }
