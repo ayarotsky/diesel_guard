@@ -62,6 +62,7 @@ Safe alternative:
 - [Renaming a table](#renaming-a-table)
 - [Short integer primary keys](#short-integer-primary-keys)
 - [Adding a SERIAL column to an existing table](#adding-a-serial-column-to-an-existing-table)
+- [Truncating a table](#truncating-a-table)
 
 ### Adding a column with a default value
 
@@ -490,6 +491,46 @@ ALTER SEQUENCE users_id_seq OWNED BY users.id;
 
 **Key insight:** Adding a column with `DEFAULT nextval(...)` on an existing table still triggers a table rewrite. The solution is to add the column first without any default, backfill separately, then set the default for future rows only.
 
+### Truncating a table
+
+#### Bad
+
+TRUNCATE TABLE acquires an ACCESS EXCLUSIVE lock, blocking all operations (reads and writes) on the table. Unlike DELETE, TRUNCATE cannot be batched or throttled, making it unsuitable for large tables in production environments.
+
+```sql
+TRUNCATE TABLE users;
+TRUNCATE TABLE orders, order_items;
+```
+
+#### Good
+
+Use DELETE with batching to incrementally remove rows while allowing concurrent access:
+
+```sql
+-- Delete rows in small batches to allow concurrent access
+DELETE FROM users WHERE id IN (
+  SELECT id FROM users LIMIT 1000
+);
+
+-- Repeat the batched DELETE until all rows are removed
+-- (Can be done outside migration with monitoring)
+
+-- Optional: Reset sequences if needed
+ALTER SEQUENCE users_id_seq RESTART WITH 1;
+
+-- Optional: Reclaim space
+VACUUM users;
+```
+
+**Important:** If you absolutely must use TRUNCATE (e.g., in a test environment or during a maintenance window), use a `safety-assured` block:
+
+```sql
+-- safety-assured:start
+-- Safe because: running in test environment / maintenance window
+TRUNCATE TABLE users;
+-- safety-assured:end
+```
+
 ## Usage
 
 ### Check a single migration
@@ -629,6 +670,7 @@ disable_checks = ["AddColumnCheck"]
 - `RenameColumnCheck` - RENAME COLUMN
 - `RenameTableCheck` - RENAME TABLE
 - `ShortIntegerPrimaryKeyCheck` - SMALLINT/INT/INTEGER primary keys
+- `TruncateTableCheck` - TRUNCATE TABLE
 - `UnnamedConstraintCheck` - Unnamed constraints (UNIQUE, FOREIGN KEY, CHECK)
 
 ## Safety Assured
@@ -697,13 +739,11 @@ Error: Unclosed 'safety-assured:start' at line 1
 - **Adding stored GENERATED column** - Triggers full table rewrite with ACCESS EXCLUSIVE lock
 - **Adding JSON/JSONB column** - Can break SELECT DISTINCT in older PostgreSQL versions
 - **DROP TABLE with multiple foreign keys** - Extended locks on multiple tables simultaneously
-- **TRUNCATE TABLE** - Acquires ACCESS EXCLUSIVE lock, blocks all operations, cannot be batched
 
 ### Data safety & best practices
 
 - **Wide indexes** - Indexes with 3+ columns rarely help; consider partial indexes
 - **Multiple foreign keys** - Can block all involved tables simultaneously
-- **Replacing indexes** - Dropping old index before creating replacement risks query performance
 - **Mismatched foreign key column types** - Foreign key column type differs from referenced primary key
 
 ## Contributing
