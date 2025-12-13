@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## 0.3.0 - 2025-12-13
+
+### Added
+
+- `AddJsonColumn` check - Detects adding JSON/JSONB columns without safe migration pattern
+- `AddPrimaryKey` check - Detects `ALTER TABLE ... ADD PRIMARY KEY` operations
+- `DropPrimaryKey` check - Detects `ALTER TABLE ... DROP CONSTRAINT` on primary keys
+- `WideIndex` check - Detects indexes with excessive column count that may hurt performance
+- `TruncateTable` check - Detects `TRUNCATE TABLE` operations in migrations
+- `DropIndex` check - Detects `DROP INDEX` without `CONCURRENTLY` clause
+- `ShortIntegerPrimaryKey` check - Detects `INTEGER` (32-bit) primary keys that risk overflow
+- `AddUniqueConstraint` check - Detects `ALTER TABLE ... ADD CONSTRAINT ... UNIQUE` operations
+- GitHub Actions CI workflow for automated testing
+- Parse error reporting now includes source code spans and line numbers for better debugging
+
+### Changed
+
+- CI toolchain locked to Rust 1.90.0 for consistent builds
+- Documentation improvements including table of contents in README
+- Fixed CHECK constraint naming examples to follow best practices
+
 ## 0.2.0 - 2025-12-07
 
 ### Added
