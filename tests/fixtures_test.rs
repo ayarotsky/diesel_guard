@@ -302,6 +302,17 @@ fn test_short_int_pk_unsafe_detected() {
 }
 
 #[test]
+fn test_truncate_table_detected() {
+    let checker = SafetyChecker::new();
+    let path = fixture_path("truncate_table_unsafe");
+
+    let violations = checker.check_file(Utf8Path::new(&path)).unwrap();
+
+    assert_eq!(violations.len(), 1, "Expected 1 violation");
+    assert_eq!(violations[0].operation, "TRUNCATE TABLE");
+}
+
+#[test]
 fn test_check_entire_fixtures_directory() {
     let checker = SafetyChecker::new();
     let results = checker
@@ -312,14 +323,14 @@ fn test_check_entire_fixtures_directory() {
 
     assert_eq!(
         results.len(),
-        17,
-        "Expected violations in 17 files, got {}",
+        18,
+        "Expected violations in 18 files, got {}",
         results.len()
     );
 
     assert_eq!(
-        total_violations, 24,
-        "Expected 24 total violations: 14 files with 1 each, drop_multiple_columns with 2, unnamed_constraint_unsafe with 4, short_int_pk_unsafe with 4, got {}",
+        total_violations, 25,
+        "Expected 25 total violations: 15 files with 1 each, drop_multiple_columns with 2, unnamed_constraint_unsafe with 4, short_int_pk_unsafe with 4, got {}",
         total_violations
     );
 }
