@@ -63,6 +63,7 @@ Safe alternative:
 - [Short integer primary keys](#short-integer-primary-keys)
 - [Adding a SERIAL column to an existing table](#adding-a-serial-column-to-an-existing-table)
 - [Truncating a table](#truncating-a-table)
+- [Wide indexes](#wide-indexes)
 
 ### Adding a column with a default value
 
@@ -531,6 +532,47 @@ TRUNCATE TABLE users;
 -- safety-assured:end
 ```
 
+### Wide indexes
+
+#### Bad
+
+Indexes with 4 or more columns are rarely effective. PostgreSQL can only use multi-column indexes efficiently when filtering on the leftmost columns in order. Wide indexes also increase storage costs and slow down write operations (INSERT, UPDATE, DELETE).
+
+```sql
+-- 4+ columns: rarely useful
+CREATE INDEX idx_users_search ON users(tenant_id, email, name, status);
+CREATE INDEX idx_orders_composite ON orders(user_id, product_id, status, created_at);
+```
+
+#### Good
+
+Use narrower, more targeted indexes based on actual query patterns:
+
+```sql
+-- Option 1: Partial index for specific query pattern
+CREATE INDEX idx_users_active_email ON users(email)
+WHERE status = 'active';
+
+-- Option 2: Separate indexes for different queries
+CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_status ON users(status);
+
+-- Option 3: Covering index with INCLUDE (PostgreSQL 11+)
+-- Includes extra columns for SELECT without adding them to index keys
+CREATE INDEX idx_users_email_covering ON users(email)
+INCLUDE (name, status);
+
+-- Option 4: Two-column composite (still useful for some patterns)
+CREATE INDEX idx_users_tenant_email ON users(tenant_id, email);
+```
+
+**When wide indexes might be acceptable:**
+- Composite foreign keys matching the referenced table's primary key
+- Specific, verified query patterns that need all columns in order
+- Use `safety-assured` if you've confirmed the index is necessary
+
+**Performance tip:** PostgreSQL can combine multiple indexes using bitmap scans. Two separate indexes often outperform one wide index.
+
 ## Usage
 
 ### Check a single migration
@@ -672,6 +714,7 @@ disable_checks = ["AddColumnCheck"]
 - `ShortIntegerPrimaryKeyCheck` - SMALLINT/INT/INTEGER primary keys
 - `TruncateTableCheck` - TRUNCATE TABLE
 - `UnnamedConstraintCheck` - Unnamed constraints (UNIQUE, FOREIGN KEY, CHECK)
+- `WideIndexCheck` - Indexes with 4+ columns
 
 ## Safety Assured
 
@@ -742,7 +785,6 @@ Error: Unclosed 'safety-assured:start' at line 1
 
 ### Data safety & best practices
 
-- **Wide indexes** - Indexes with 3+ columns rarely help; consider partial indexes
 - **Multiple foreign keys** - Can block all involved tables simultaneously
 - **Mismatched foreign key column types** - Foreign key column type differs from referenced primary key
 
