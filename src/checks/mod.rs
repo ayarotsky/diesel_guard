@@ -12,6 +12,7 @@ mod rename_table;
 mod short_int_primary_key;
 mod truncate_table;
 mod unnamed_constraint;
+mod wide_index;
 
 #[cfg(test)]
 mod test_utils;
@@ -30,6 +31,7 @@ pub use rename_table::RenameTableCheck;
 pub use short_int_primary_key::ShortIntegerPrimaryKeyCheck;
 pub use truncate_table::TruncateTableCheck;
 pub use unnamed_constraint::UnnamedConstraintCheck;
+pub use wide_index::WideIndexCheck;
 
 use crate::config::Config;
 
@@ -112,6 +114,7 @@ impl Registry {
         self.register_check(config, ShortIntegerPrimaryKeyCheck);
         self.register_check(config, TruncateTableCheck);
         self.register_check(config, UnnamedConstraintCheck);
+        self.register_check(config, WideIndexCheck);
     }
 
     /// Register a check if it's enabled in configuration
