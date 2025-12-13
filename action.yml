@@ -1,0 +1,26 @@
+name: Diesel Guard
+description: Check PostgreSQL migrations for dangerous patterns
+branding:
+  icon: shield
+  color: red
+
+inputs:
+  path:
+    description: Path to DB migrations directory or file
+    required: true
+    default: 'migrations/'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Install diesel-guard
+      uses: baptiste0928/cargo-install@v3
+      with:
+        crate: diesel-guard
+        # Extract version from action ref (strips 'v' prefix from tags like v0.2.0)
+        # If using @main, this will be empty and install latest
+        version: ${{ github.action_ref != 'main' && github.action_ref || '' }}
+
+    - name: Check DB migrations
+      shell: bash
+      run: diesel-guard check "${{ inputs.path }}"
